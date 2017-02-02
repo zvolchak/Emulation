@@ -23,7 +23,8 @@
 # Note: ARTDIR was originally TMPDIR, but that variable is suppressed
 # by glibc on setuid programs which breaks under certain uses of sudo.
 
-export ARTDIR=${ARTDIR:-/tmp}	# ARTifact DIRectory
+
+export ARTDIR=${TMPDIR} # ARTifact DIRectory
 
 export MIRROR=${MIRROR:-http://ftp.us.debian.org/debian}
 
@@ -295,7 +296,8 @@ function manifest_template_image() {
     # NOTE: killing the script here may leave a dangling mount that
     # interferes with subsequent runs, but doesn't complain properly.
 
-    quiet $VMD $VAROPT --log=$LOG --image=$TEMPLATE --tarball=$TARBALL \
+    #quiet $VMD $VAROPT --log=$LOG --image=$TEMPLATE --tarball=$TARBALL \
+    quiet $VMD $VAROPT --log=$LOG --image=$TEMPLATE \
     	--mirror=$MIRROR --owner=$SUDO_USER
     RET=$?
     quiet $SUDO chown $SUDO_USER "/$ARTDIR/${HOSTUSERBASE}.*" 	# --owner bug
@@ -324,6 +326,11 @@ function emit_files() {
 
     # With the simple invocation, this is always true
     $SUDO ln -s /sys/bus/pci/devices/0000:00:04.0/resource2 $MNT/$MNT
+    #$SUDO chroot $MNT "echo \"#deb /myrepo/ here main contrib non-free\" > /etc/apt/sources.list"
+    echo "deb http://downloads.linux.hpe.com/repo/l4fame/ unstable/" >> $MNT/etc/apt/sources.list
+    echo "deb-src http://downloads.linux.hpe.com/repo/l4fame/ unstable/" >> $MNT/etc/apt/sources.list
+    $SUDO chroot $MNT/ sh -c "apt update -y --assume-yes"
+    $SUDO chroot $MNT/ sh -c "apt-get dist-upgrade -y --assume-yes"
 
     #------------------------------------------------------------------
 
@@ -408,18 +415,21 @@ EODOIT
     exec 3>&1		# Save stdout before...
     exec >>$DOIT	# ...hijacking it
     for N in `seq $NODES`; do
-	NODE=$HOSTUSERBASE$N
-	MAC=$MACBASE`printf "%02d" $N`
-	echo "nohup \$QEMU -name $NODE \\"
-	echo "	-netdev bridge,id=$NETWORK,br=$NETWORK,helper=$QBH \\"
-	echo "	-device virtio-net,mac=$MAC,netdev=$NETWORK \\"
-	echo "	-device ivshmem,shm=$PROJECT,size=1024 \\"
-	echo "	\$NODISPLAY $ARTDIR/$NODE.qcow2 &"
-	echo
+    NODE=$HOSTUSERBASE$N
+    MAC=$MACBASE`printf "%02d" $N`
+    echo "nohup \$QEMU -name $NODE \\"
+    echo "  -netdev bridge,id=$NETWORK,br=$NETWORK,helper=$QBH \\"
+    echo "  -device virtio-net,mac=$MAC,netdev=$NETWORK \\"
+    echo "  --object memory-backend-file,size=1024,mem-path=/dev/shm/fabric_emul,id=FAM,share=on \\"
+    echo "  -device ivshmem-plain,memdev=FAM \\"
+    echo "  \$NODISPLAY /home/conductor/tmp/fabric1.qcow2 &"
+    echo
     done
     exec 1>&3		# Restore stdout
     exec 3>&-
     chmod +x $DOIT
+    #echo "	-device ivshmem,shm=$PROJECT,size=1024 \\"
+    #echo "	\$NODISPLAY $ARTDIR/$NODE.qcow2 &"
     return 0
 }
 
